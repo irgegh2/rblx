@@ -101,7 +101,7 @@ local function buildWorld()
 		spawn.Anchored = true
 		spawn.Neutral = true
 		spawn.Duration = 0
-		spawn.Color3 = Color3.fromRGB(60, 60, 70)
+		spawn.Color = Color3.fromRGB(60, 60, 70)
 		spawn.Parent = folder
 	end
 

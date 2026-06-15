@@ -54,7 +54,7 @@ local C = {
 local function corner(gui, r)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, r or 10)
-	c.Parent = gui
+	c.Parent = root
 	return c
 end
 
@@ -62,7 +62,7 @@ local function stroke(gui, color, t)
 	local s = Instance.new("UIStroke")
 	s.Color = color or Color3.new(0, 0, 0)
 	s.Thickness = t or 2
-	s.Parent = gui
+	s.Parent = root
 	return s
 end
 
@@ -102,6 +102,13 @@ local function buildHUD()
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = playerGui
 
+	-- контейнер со всем HUD (панели лежат в нём; масштаб задаём каждой панели ниже)
+	local root = Instance.new("Frame")
+	root.Name = "Root"
+	root.Size = UDim2.new(1, 0, 1, 0)
+	root.BackgroundTransparency = 1
+	root.Parent = gui
+
 	-- ВЕРХНЯЯ ПАНЕЛЬ
 	local top = Instance.new("Frame")
 	top.Size = UDim2.new(0, 360, 0, 64)
@@ -109,7 +116,7 @@ local function buildHUD()
 	top.AnchorPoint = Vector2.new(0.5, 0)
 	top.BackgroundColor3 = C.panel
 	top.BackgroundTransparency = 0.1
-	top.Parent = gui
+	top.Parent = root
 	corner(top, 14); stroke(top, Color3.fromRGB(0, 0, 0), 2)
 
 	ref.topTitle = newText({ Size = UDim2.new(1, -20, 0, 26), Position = UDim2.new(0, 10, 0, 6),
@@ -140,7 +147,7 @@ local function buildHUD()
 	oof.AnchorPoint = Vector2.new(1, 0)
 	oof.BackgroundColor3 = C.panel
 	oof.BackgroundTransparency = 0.1
-	oof.Parent = gui
+	oof.Parent = root
 	corner(oof, 14); stroke(oof, C.oof, 2)
 
 	newText({ Size = UDim2.new(0, 50, 1, 0), Position = UDim2.new(0, 6, 0, 0),
@@ -161,7 +168,7 @@ local function buildHUD()
 	gems.Position = UDim2.new(0, 20, 0.42, 0)
 	gems.BackgroundColor3 = C.panel
 	gems.BackgroundTransparency = 0.1
-	gems.Parent = gui
+	gems.Parent = root
 	corner(gems, 14); stroke(gems, C.gems, 2)
 
 	newText({ Size = UDim2.new(0, 46, 1, 0), Position = UDim2.new(0, 6, 0, 0),
@@ -194,7 +201,7 @@ local function buildHUD()
 	side.Size = UDim2.new(0, 56, 0, 120)
 	side.Position = UDim2.new(0, 20, 0.42, 70)
 	side.BackgroundTransparency = 1
-	side.Parent = gui
+	side.Parent = root
 	local sideLayout = Instance.new("UIListLayout")
 	sideLayout.Padding = UDim.new(0, 8)
 	sideLayout.Parent = side
@@ -216,7 +223,7 @@ local function buildHUD()
 	bar.Position = UDim2.new(0.5, 0, 1, -12)
 	bar.AnchorPoint = Vector2.new(0.5, 1)
 	bar.BackgroundTransparency = 1
-	bar.Parent = gui
+	bar.Parent = root
 	local barLayout = Instance.new("UIListLayout")
 	barLayout.FillDirection = Enum.FillDirection.Horizontal
 	barLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -246,7 +253,7 @@ local function buildHUD()
 	ref.tutorial.Position = UDim2.new(0.5, 0, 1, -86)
 	ref.tutorial.AnchorPoint = Vector2.new(0.5, 1)
 	ref.tutorial.BackgroundColor3 = Color3.fromRGB(40, 36, 30)
-	ref.tutorial.Parent = gui
+	ref.tutorial.Parent = root
 	corner(ref.tutorial, 12); stroke(ref.tutorial, Color3.fromRGB(80, 70, 50), 2)
 
 	newText({ Size = UDim2.new(0, 56, 0, 56), Position = UDim2.new(0, 8, 0.5, 0),
@@ -274,6 +281,16 @@ local function buildHUD()
 	ref.tutBar.BackgroundColor3 = C.oof
 	ref.tutBar.Parent = tutBarBg
 	corner(ref.tutBar, 4)
+
+	-- ОБЩИЙ МАСШТАБ: уменьшаем каждую панель вокруг её якоря
+	-- (меньше число = мельче интерфейс; поставь 1 чтобы вернуть исходный размер)
+	for _, panel in ipairs(root:GetChildren()) do
+		if panel:IsA("GuiObject") then
+			local s = Instance.new("UIScale")
+			s.Scale = 0.7
+			s.Parent = panel
+		end
+	end
 end
 
 -- ════════════════════════════════════════════════════════════════════════
