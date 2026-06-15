@@ -202,12 +202,18 @@ end
 UpgradeNoob.OnServerEvent:Connect(function(player)
 	local p = DataManager.get(player)
 	if not p or not p.HasNoob then return end
-	if p.NoobLevel >= Config.Noob.MaxLevel then return end
+	if p.NoobLevel >= Config.Noob.MaxLevel then
+		Notify:FireClient(player, "Max level!", "oof")
+		return
+	end
 	local cost = Formulas.noobUpgradeCost(p.NoobLevel)
 	if p.Oof >= cost then
 		p.Oof -= cost
 		p.NoobLevel += 1
 		sync(player)
+		Notify:FireClient(player, "Upgraded! Lv " .. p.NoobLevel, "oof")
+	else
+		Notify:FireClient(player, "Need " .. Format.short(cost) .. " Oof", "oof")
 	end
 end)
 
