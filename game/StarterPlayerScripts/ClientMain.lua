@@ -4,14 +4,16 @@
 	║  ПОЛОЖИТЬ В:  StarterPlayer > StarterPlayerScripts > ClientMain║
 	╚══════════════════════════════════════════════════════════════╝
 
-	Весь интерфейс. Строится кодом, поэтому переносить нужно только
-	этот один скрипт. Делает:
-	  • верхнюю панель (прогресс к престижу);
-	  • счётчик Oof (справа) и гемов (слева) + боковые/нижние кнопки;
-	  • доску улучшений (SurfaceGui) на твоей доске в мире;
-	  • стрелку-подсказку над кнопкой (картинку вставишь в Config.ArrowImageId);
+	Весь интерфейс + локальная часть (рисуется у каждого игрока своё, поверх
+	ОБЩЕЙ локации). Переносить нужно только этот один скрипт. Делает:
+	  • HUD: верхняя панель прогресса, Oof справа, гемы и кнопки слева, тулбар;
+	  • доску улучшений (SurfaceGui) на общей доске в мире;
+	  • ЛОКАЛЬНОГО ноба (клон рига из ReplicatedStorage) на общей кнопке-площадке;
 	  • табличку над нобом с кнопкой "Upgrade";
-	  • туториал и всплывающие "+X".
+	  • стрелку-МАРШРУТ (Beam) от тела игрока к цели туториала;
+	  • туториал из 2 шагов и всплывашки "+X".
+
+	Экономика считается на сервере (см. GameServer) — тут только отображение.
 ]]
 
 local Players           = game:GetService("Players")
@@ -48,7 +50,7 @@ local C = {
 	dim     = Color3.fromRGB(170, 170, 190),
 }
 
--- ── МЕЛКИЕ ХЕЛПЕРЫ UI ────────────────────────────────────────────────────
+-- ── ХЕЛПЕРЫ UI ───────────────────────────────────────────────────────────
 local function corner(gui, r)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, r or 10)
@@ -76,14 +78,21 @@ end
 
 -- ── СОСТОЯНИЕ ────────────────────────────────────────────────────────────
 local state = { profile = nil }
-local ref = {}            -- ссылки на элементы HUD для обновления
-local boardRef = nil      -- ссылки на доску
-local noobRef = nil       -- ссылки на табличку над нобом
+local ref = {}
+local boardRef = nil
+local noobRef = nil
 local gemTimer = Config.Gems.Interval
-local refresh             -- предобъявление (определяется ниже)
+
+local worldFolder, worldButton, worldBoard
+local localNoob = nil
+
+-- стрелка-маршрут (Beam)
+local arrowFrom, arrowTo, beam
+
+local refresh -- предобъявление
 
 -- ════════════════════════════════════════════════════════════════════════
---  HUD (ScreenGui)
+--  HUD
 -- ════════════════════════════════════════════════════════════════════════
 local function buildHUD()
 	local gui = Instance.new("ScreenGui")
@@ -93,7 +102,7 @@ local function buildHUD()
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = playerGui
 
-	-- ВЕРХНЯЯ ПАНЕЛЬ: прогресс к престижу --------------------------------
+	-- ВЕРХНЯЯ ПАНЕЛЬ
 	local top = Instance.new("Frame")
 	top.Size = UDim2.new(0, 360, 0, 64)
 	top.Position = UDim2.new(0.5, 0, 0, 10)
@@ -103,16 +112,12 @@ local function buildHUD()
 	top.Parent = gui
 	corner(top, 14); stroke(top, Color3.fromRGB(0, 0, 0), 2)
 
-	ref.topTitle = newText({
-		Size = UDim2.new(1, -20, 0, 26), Position = UDim2.new(0, 10, 0, 6),
-		Text = "0/5T Oofs", TextColor3 = C.white,
-	})
+	ref.topTitle = newText({ Size = UDim2.new(1, -20, 0, 26), Position = UDim2.new(0, 10, 0, 6),
+		Text = "0/5T Oofs", TextColor3 = C.white })
 	ref.topTitle.Parent = top
 
-	ref.topSub = newText({
-		Size = UDim2.new(1, -20, 0, 14), Position = UDim2.new(0, 10, 0, 32),
-		Text = "Progress for Prestige 1", TextColor3 = C.dim, Font = Enum.Font.Gotham,
-	})
+	ref.topSub = newText({ Size = UDim2.new(1, -20, 0, 14), Position = UDim2.new(0, 10, 0, 32),
+		Text = "Progress for Prestige 1", TextColor3 = C.dim, Font = Enum.Font.Gotham })
 	ref.topSub.Parent = top
 
 	local barBg = Instance.new("Frame")
@@ -128,7 +133,7 @@ local function buildHUD()
 	ref.topBar.Parent = barBg
 	corner(ref.topBar, 4)
 
-	-- СЧЁТЧИК OOF (справа) ----------------------------------------------
+	-- OOF (справа)
 	local oof = Instance.new("Frame")
 	oof.Size = UDim2.new(0, 230, 0, 60)
 	oof.Position = UDim2.new(1, -20, 0, 20)
@@ -138,24 +143,19 @@ local function buildHUD()
 	oof.Parent = gui
 	corner(oof, 14); stroke(oof, C.oof, 2)
 
-	-- иконка-смайлик (можешь заменить на ImageLabel со своей картинкой)
 	newText({ Size = UDim2.new(0, 50, 1, 0), Position = UDim2.new(0, 6, 0, 0),
 		Text = "🙂", TextColor3 = C.oof, Parent = oof })
 
-	ref.oofAmount = newText({
-		Size = UDim2.new(1, -64, 0, 34), Position = UDim2.new(0, 58, 0, 6),
-		Text = "0", TextColor3 = C.oof, TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	ref.oofAmount = newText({ Size = UDim2.new(1, -64, 0, 34), Position = UDim2.new(0, 58, 0, 6),
+		Text = "0", TextColor3 = C.oof, TextXAlignment = Enum.TextXAlignment.Left })
 	ref.oofAmount.Parent = oof
 
-	ref.oofRate = newText({
-		Size = UDim2.new(1, -64, 0, 16), Position = UDim2.new(0, 58, 0, 38),
+	ref.oofRate = newText({ Size = UDim2.new(1, -64, 0, 16), Position = UDim2.new(0, 58, 0, 38),
 		Text = "+0 / tick", TextColor3 = C.dim, Font = Enum.Font.Gotham,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
+		TextXAlignment = Enum.TextXAlignment.Left })
 	ref.oofRate.Parent = oof
 
-	-- СЧЁТЧИК ГЕМОВ (слева) ---------------------------------------------
+	-- ГЕМЫ (слева)
 	local gems = Instance.new("Frame")
 	gems.Size = UDim2.new(0, 210, 0, 56)
 	gems.Position = UDim2.new(0, 20, 0.42, 0)
@@ -167,17 +167,13 @@ local function buildHUD()
 	newText({ Size = UDim2.new(0, 46, 1, 0), Position = UDim2.new(0, 6, 0, 0),
 		Text = "💎", TextColor3 = C.gems, Parent = gems })
 
-	ref.gemAmount = newText({
-		Size = UDim2.new(0, 110, 0, 30), Position = UDim2.new(0, 52, 0, 4),
-		Text = "0", TextColor3 = C.white, TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	ref.gemAmount = newText({ Size = UDim2.new(0, 110, 0, 30), Position = UDim2.new(0, 52, 0, 4),
+		Text = "0", TextColor3 = C.white, TextXAlignment = Enum.TextXAlignment.Left })
 	ref.gemAmount.Parent = gems
 
-	ref.gemRate = newText({
-		Size = UDim2.new(0, 110, 0, 16), Position = UDim2.new(0, 52, 0, 34),
+	ref.gemRate = newText({ Size = UDim2.new(0, 110, 0, 16), Position = UDim2.new(0, 52, 0, 34),
 		Text = "+0 [0s]", TextColor3 = C.gems, Font = Enum.Font.Gotham,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	})
+		TextXAlignment = Enum.TextXAlignment.Left })
 	ref.gemRate.Parent = gems
 
 	local plus = Instance.new("TextButton")
@@ -191,12 +187,9 @@ local function buildHUD()
 	plus.TextColor3 = C.white
 	plus.Parent = gems
 	corner(plus, 10)
-	plus.Activated:Connect(function()
-		-- сюда позже повесишь магазин гемов; пока просто перезапросим данные
-		RequestData:FireServer()
-	end)
+	plus.Activated:Connect(function() RequestData:FireServer() end)
 
-	-- БОКОВЫЕ КВАДРАТНЫЕ КНОПКИ (слева снизу) ---------------------------
+	-- БОКОВЫЕ КНОПКИ
 	local side = Instance.new("Frame")
 	side.Size = UDim2.new(0, 56, 0, 120)
 	side.Position = UDim2.new(0, 20, 0.42, 70)
@@ -217,7 +210,7 @@ local function buildHUD()
 		corner(b, 12); stroke(b, Color3.fromRGB(0, 0, 0), 2)
 	end
 
-	-- НИЖНИЙ ТУЛБАР -----------------------------------------------------
+	-- НИЖНИЙ ТУЛБАР
 	local bar = Instance.new("Frame")
 	bar.Size = UDim2.new(0, 360, 0, 64)
 	bar.Position = UDim2.new(0.5, 0, 1, -12)
@@ -247,7 +240,7 @@ local function buildHUD()
 		corner(b, 12); stroke(b, Color3.fromRGB(0, 0, 0), 2)
 	end
 
-	-- ТУТОРИАЛ-КАРТОЧКА (снизу по центру, над тулбаром) -----------------
+	-- ТУТОРИАЛ-КАРТОЧКА
 	ref.tutorial = Instance.new("Frame")
 	ref.tutorial.Size = UDim2.new(0, 380, 0, 70)
 	ref.tutorial.Position = UDim2.new(0.5, 0, 1, -86)
@@ -260,17 +253,13 @@ local function buildHUD()
 		AnchorPoint = Vector2.new(0, 0.5), Text = "🙂", TextColor3 = C.oof,
 		Parent = ref.tutorial })
 
-	ref.tutTitle = newText({
-		Size = UDim2.new(1, -80, 0, 24), Position = UDim2.new(0, 72, 0, 8),
-		Text = "Get your Noob", TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	ref.tutTitle = newText({ Size = UDim2.new(1, -80, 0, 24), Position = UDim2.new(0, 72, 0, 8),
+		Text = "Get your Noob", TextXAlignment = Enum.TextXAlignment.Left })
 	ref.tutTitle.Parent = ref.tutorial
 
-	ref.tutDesc = newText({
-		Size = UDim2.new(1, -80, 0, 18), Position = UDim2.new(0, 72, 0, 32),
-		Text = "Press the button to spawn it", TextColor3 = C.dim,
-		Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	ref.tutDesc = newText({ Size = UDim2.new(1, -80, 0, 18), Position = UDim2.new(0, 72, 0, 32),
+		Text = "Step on the button", TextColor3 = C.dim, Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left })
 	ref.tutDesc.Parent = ref.tutorial
 
 	local tutBarBg = Instance.new("Frame")
@@ -288,7 +277,7 @@ local function buildHUD()
 end
 
 -- ════════════════════════════════════════════════════════════════════════
---  ДОСКА УЛУЧШЕНИЙ (SurfaceGui на твоей доске в мире)
+--  ДОСКА УЛУЧШЕНИЙ (SurfaceGui — локально на общей доске)
 -- ════════════════════════════════════════════════════════════════════════
 local function buildBoard(boardPart)
 	local sg = Instance.new("SurfaceGui")
@@ -331,16 +320,14 @@ local function buildBoard(boardPart)
 		newText({ Size = UDim2.new(1, 0, 0, 44), Position = UDim2.new(0, 0, 0, 8),
 			Text = u.DisplayName, Parent = col })
 
-		local levelLabel = newText({ Size = UDim2.new(1, 0, 0, 30),
-			Position = UDim2.new(0, 0, 0, 52), Text = "0 / " .. u.MaxLevel,
-			TextColor3 = C.gems, Parent = col })
+		local levelLabel = newText({ Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 52),
+			Text = "0 / " .. u.MaxLevel, TextColor3 = C.gems, Parent = col })
 
 		newText({ Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 0, 84),
 			Text = u.Desc, TextColor3 = C.dim, Font = Enum.Font.Gotham, Parent = col })
 
-		local costLabel = newText({ Size = UDim2.new(1, 0, 0, 34),
-			Position = UDim2.new(0, 0, 1, -96), Text = "0 Oof",
-			TextColor3 = C.oof, Parent = col })
+		local costLabel = newText({ Size = UDim2.new(1, 0, 0, 34), Position = UDim2.new(0, 0, 1, -96),
+			Text = "0 Oof", TextColor3 = C.oof, Parent = col })
 
 		local buyBtn = Instance.new("TextButton")
 		buyBtn.Size = UDim2.new(0.5, -14, 0, 50)
@@ -371,39 +358,7 @@ local function buildBoard(boardPart)
 end
 
 -- ════════════════════════════════════════════════════════════════════════
---  СТРЕЛКА-ПОДСКАЗКА над кнопкой
--- ════════════════════════════════════════════════════════════════════════
-local function buildArrow(buttonPart)
-	local bb = Instance.new("BillboardGui")
-	bb.Name = "ArrowHint"
-	bb.Size = UDim2.new(0, 120, 0, 120)
-	bb.StudsOffset = Vector3.new(0, 6, 0)
-	bb.AlwaysOnTop = true
-	bb.Adornee = buttonPart
-	bb.Parent = buttonPart
-
-	local img = Instance.new("ImageLabel")
-	img.Size = UDim2.new(1, 0, 1, 0)
-	img.BackgroundTransparency = 1
-	img.Image = Config.ArrowImageId -- сюда твоя картинка-стрелка
-	img.Parent = bb
-
-	-- если картинку ещё не вставил — покажем текстовую стрелку, чтобы было видно
-	if Config.ArrowImageId == "rbxassetid://0" or Config.ArrowImageId == "" then
-		img.Image = ""
-		local t = newText({ Size = UDim2.new(1, 0, 1, 0), Text = "⬇️", Parent = img })
-		t.TextColor3 = C.oof
-	end
-
-	-- лёгкая анимация "подпрыгивания" (один зацикленный твин)
-	ref.arrow = bb
-	TweenService:Create(bb, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-		{ StudsOffset = Vector3.new(0, 7.5, 0) }):Play()
-	return bb
-end
-
--- ════════════════════════════════════════════════════════════════════════
---  ТАБЛИЧКА НАД НОБОМ + кнопка "Upgrade"
+--  ТАБЛИЧКА НАД НОБОМ
 -- ════════════════════════════════════════════════════════════════════════
 local function decorateNoob(noob)
 	local head = noob:FindFirstChild("Head") or noob:FindFirstChild("HumanoidRootPart")
@@ -417,8 +372,7 @@ local function decorateNoob(noob)
 	bb.Adornee = head
 	bb.Parent = head
 
-	local nameLabel = newText({ Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 0, 0),
-		Text = Config.Noob.DisplayName, Parent = bb })
+	newText({ Size = UDim2.new(1, 0, 0, 26), Text = Config.Noob.DisplayName, Parent = bb })
 
 	local levelLabel = newText({ Size = UDim2.new(1, 0, 0, 18), Position = UDim2.new(0, 0, 0, 26),
 		Text = "Level 1", TextColor3 = C.oof, Font = Enum.Font.Gotham, Parent = bb })
@@ -438,30 +392,123 @@ local function decorateNoob(noob)
 	corner(btn, 10); stroke(btn, Color3.fromRGB(0, 0, 0), 2)
 	btn.Activated:Connect(function() UpgradeNoob:FireServer() end)
 
-	noobRef = { name = nameLabel, level = levelLabel, rate = rateLabel, button = btn }
-end
-
--- Ждём появления ноба на нашем плоту (он спавнится после покупки)
-local function watchNoob(folder)
-	local existing = folder:FindFirstChild("Noob")
-	if existing then decorateNoob(existing) end
-	folder.ChildAdded:Connect(function(child)
-		if child.Name == "Noob" then
-			task.wait(0.2) -- дать частям прогрузиться
-			decorateNoob(child)
-			refresh()
-		end
-	end)
+	noobRef = { level = levelLabel, rate = rateLabel, button = btn }
 end
 
 -- ════════════════════════════════════════════════════════════════════════
---  ОБНОВЛЕНИЕ ВСЕГО ИНТЕРФЕЙСА ПО ДАННЫМ
+--  ЛОКАЛЬНЫЙ НОБ (клон рига из ReplicatedStorage, на общей кнопке-площадке)
+-- ════════════════════════════════════════════════════════════════════════
+local function spawnLocalNoob()
+	if localNoob or not worldButton then return end
+
+	local rig = ReplicatedStorage:FindFirstChild(Config.Noob.RigName)
+	if not rig then
+		warn("[ClientMain] В ReplicatedStorage нет рига '" .. Config.Noob.RigName .. "'. Ноб не появится.")
+		return
+	end
+
+	local noob = rig:Clone()
+	noob.Name = "LocalNoob_" .. player.UserId
+
+	local topY = worldButton.Position.Y + worldButton.Size.Y / 2
+	local pos = Vector3.new(worldButton.Position.X, topY + 3, worldButton.Position.Z)
+	noob:PivotTo(CFrame.new(pos) * CFrame.Angles(0, math.pi, 0)) -- лицом к игроку
+
+	-- фиксируем корень, остальное держится на Motor6D и анимируется
+	local hrp = noob:FindFirstChild("HumanoidRootPart") or noob:FindFirstChild("Torso")
+	if hrp then hrp.Anchored = true end
+	for _, d in ipairs(noob:GetDescendants()) do
+		if d:IsA("BasePart") then d.CanCollide = false end
+	end
+
+	noob.Parent = Workspace
+
+	local hum = noob:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		local animator = hum:FindFirstChildOfClass("Animator")
+		if not animator then
+			animator = Instance.new("Animator")
+			animator.Parent = hum
+		end
+		local anim = Instance.new("Animation")
+		anim.AnimationId = Config.Noob.AnimationId
+		local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
+		if ok and track then
+			track.Looped = true
+			track:Play()
+		end
+	end
+
+	decorateNoob(noob)
+	localNoob = noob
+end
+
+-- ════════════════════════════════════════════════════════════════════════
+--  СТРЕЛКА-МАРШРУТ (Beam от игрока к цели)
+-- ════════════════════════════════════════════════════════════════════════
+local function ensureArrow()
+	local char = player.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	if not arrowFrom or arrowFrom.Parent ~= hrp then
+		arrowFrom = Instance.new("Attachment")
+		arrowFrom.Name = "ArrowFrom"
+		arrowFrom.Parent = hrp
+		beam = nil -- старый beam умер вместе со старым телом
+	end
+	if not arrowTo then
+		arrowTo = Instance.new("Attachment")
+		arrowTo.Name = "ArrowTo"
+	end
+	if not beam or beam.Parent == nil then
+		beam = Instance.new("Beam")
+		beam.Name = "TutorialArrow"
+		beam.Attachment0 = arrowFrom
+		beam.Attachment1 = arrowTo
+		beam.Width0 = 1.2
+		beam.Width1 = 1.2
+		beam.FaceCamera = true
+		beam.LightInfluence = 0
+		beam.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+		beam.Segments = 12
+		beam.CurveSize0 = 0
+		beam.CurveSize1 = 0
+		beam.TextureMode = Enum.TextureMode.Wrap
+		beam.TextureLength = 3
+		beam.TextureSpeed = 1.5
+		if Config.ArrowImageId ~= "rbxassetid://0" and Config.ArrowImageId ~= "" then
+			beam.Texture = Config.ArrowImageId
+		end
+		beam.Parent = hrp
+	end
+end
+
+local function setArrowTarget(part, yOffset)
+	ensureArrow()
+	if not arrowTo then return end
+	if part then
+		arrowTo.Parent = part
+		arrowTo.Position = Vector3.new(0, yOffset or 0, 0)
+	end
+	if beam then beam.Enabled = (part ~= nil) end
+end
+
+-- ════════════════════════════════════════════════════════════════════════
+--  ОБНОВЛЕНИЕ ВСЕГО ПО ДАННЫМ
 -- ════════════════════════════════════════════════════════════════════════
 refresh = function()
 	local p = state.profile
 	if not p then return end
 
-	-- верхняя панель (престиж)
+	-- если ноб куплен — спавним локального ноба (один раз)
+	if p.HasNoob and not localNoob then
+		spawnLocalNoob()
+	end
+
+	-- верхняя панель
 	local req = Formulas.prestigeRequirement(p.Prestige)
 	ref.topTitle.Text = Format.short(p.Oof) .. "/" .. Format.short(req) .. " Oofs"
 	ref.topSub.Text = "Progress for Prestige " .. (p.Prestige + 1)
@@ -470,11 +517,7 @@ refresh = function()
 	-- валюты
 	ref.oofAmount.Text = Format.short(p.Oof)
 	ref.gemAmount.Text = Format.short(p.Gems)
-	if p.HasNoob then
-		ref.oofRate.Text = "+" .. Format.short(Formulas.noobReward(p)) .. " / tick"
-	else
-		ref.oofRate.Text = "no noob yet"
-	end
+	ref.oofRate.Text = p.HasNoob and ("+" .. Format.short(Formulas.noobReward(p)) .. " / tick") or "no noob yet"
 
 	-- доска
 	if boardRef then
@@ -508,24 +551,28 @@ refresh = function()
 		end
 	end
 
-	-- стрелка-подсказка видна, пока нет ноба
-	if ref.arrow then ref.arrow.Enabled = not p.HasNoob end
-
-	-- туториал
+	-- ТУТОРИАЛ (2 шага) + стрелка-маршрут
 	if not p.HasNoob then
+		-- шаг 1: купить ноба -> стрелка к кнопке
 		ref.tutTitle.Text = "Get your Noob"
-		ref.tutDesc.Text = "Press the button to spawn it"
+		ref.tutDesc.Text = "Step on the button"
 		ref.tutBar.Size = UDim2.new(0, 0, 1, 0)
 		ref.tutorial.Visible = true
+		setArrowTarget(worldButton, (worldButton and worldButton.Size.Y / 2 + 1) or 1)
 	else
 		local done = math.clamp(p.NoobLevel - 1, 0, 5)
 		if done >= 5 then
+			-- туториал пройден
 			ref.tutorial.Visible = false
+			setArrowTarget(nil)
 		else
-			ref.tutTitle.Text = "Upgrade " .. Config.Noob.DisplayName
-			ref.tutDesc.Text = "Upgrade your noob 5 times  " .. done .. "/5"
+			-- шаг 2: прокачать ноба 5 раз -> стрелка к нобу
+			ref.tutTitle.Text = "Upgrade your Noob"
+			ref.tutDesc.Text = "Upgrade it 5 times  " .. done .. "/5"
 			ref.tutBar.Size = UDim2.new(done / 5, 0, 1, 0)
 			ref.tutorial.Visible = true
+			local target = localNoob and (localNoob:FindFirstChild("HumanoidRootPart") or localNoob:FindFirstChild("Head"))
+			setArrowTarget(target or worldButton, 0)
 		end
 	end
 end
@@ -540,7 +587,7 @@ popupGui.Parent = playerGui
 
 Notify.OnClientEvent:Connect(function(text, kind)
 	local lbl = newText({
-		Size = UDim2.new(0, 160, 0, 40),
+		Size = UDim2.new(0, 180, 0, 40),
 		Position = UDim2.new(1, -120, 0, 90),
 		AnchorPoint = Vector2.new(1, 0),
 		Text = text,
@@ -555,30 +602,17 @@ Notify.OnClientEvent:Connect(function(text, kind)
 end)
 
 -- ════════════════════════════════════════════════════════════════════════
---  ПОИСК СВОЕГО ПЛОТА И ЗАПУСК
+--  СТАРТ
 -- ════════════════════════════════════════════════════════════════════════
-local function findMyPlot()
-	local plots = Workspace:WaitForChild("Plots")
-	while true do
-		for _, folder in ipairs(plots:GetChildren()) do
-			local owner = folder:FindFirstChild("Owner")
-			if owner and owner.Value == player then
-				return folder
-			end
-		end
-		task.wait(0.2)
-	end
-end
-
 buildHUD()
 
 task.spawn(function()
-	local folder = findMyPlot()
-	local board  = folder:WaitForChild("Board", 10)
-	local button = folder:WaitForChild("Button", 10)
-	if board then buildBoard(board) end
-	if button then buildArrow(button) end
-	watchNoob(folder)
+	worldFolder = Workspace:WaitForChild(Config.World.FolderName, 30)
+	if not worldFolder then return end
+	worldButton = worldFolder:WaitForChild("Button", 30)
+	worldBoard  = worldFolder:WaitForChild("Board", 30)
+	if worldBoard then buildBoard(worldBoard) end
+	ensureArrow()
 	refresh()
 end)
 
@@ -587,12 +621,19 @@ SyncData.OnClientEvent:Connect(function(profile)
 	refresh()
 end)
 
--- локальный таймер гемов (косметика "[Ns]"): свободно крутится Interval -> 0 -> Interval
+-- пересоздаём стрелку после респавна
+player.CharacterAdded:Connect(function()
+	task.wait(0.4)
+	arrowFrom = nil
+	beam = nil
+	ensureArrow()
+	refresh()
+end)
+
+-- таймер гемов (косметика "[Ns]")
 RunService.Heartbeat:Connect(function(dt)
 	gemTimer -= dt
-	if gemTimer <= 0 then
-		gemTimer = Config.Gems.Interval
-	end
+	if gemTimer <= 0 then gemTimer = Config.Gems.Interval end
 	if ref.gemRate then
 		ref.gemRate.Text = "+" .. Format.short(Config.Gems.Amount) .. " [" .. math.ceil(gemTimer) .. "s]"
 	end

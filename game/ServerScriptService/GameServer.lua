@@ -4,19 +4,21 @@
 	║  ПОЛОЖИТЬ В:  ServerScriptService > GameServer                ║
 	╚══════════════════════════════════════════════════════════════╝
 
-	Главный серверный скрипт. Делает:
-	  • создаёт RemoteEvents (папка ReplicatedStorage > Remotes);
-	  • на вход игрока: грузит сейв, строит личный плот, телепортит туда;
-	  • кнопка (ProximityPrompt) -> покупка ноба -> спавн ноба с анимацией;
-	  • раз в N секунд ноб приносит Oof (начисляется на баланс автоматически);
-	  • гемы капают по таймеру;
-	  • прокачка ноба и покупка улучшений на доске;
+	Главный серверный скрипт (он же — анти-чит: вся экономика тут).
+	  • создаёт RemoteEvents (ReplicatedStorage > Remotes);
+	  • строит ОДНУ общую локацию (Workspace > GameLocation): кнопку-площадку,
+	    доску, точку спавна — один раз для всех;
+	  • игрок НАСТУПАЕТ на кнопку (Touched) -> если ноба нет, покупает его;
+	  • раз в N секунд начисляет Oof (если у игрока есть ноб) + гемы по таймеру;
+	  • прокачка ноба и покупка улучшений (с проверкой на сервере);
 	  • автосейв + сохранение при выходе.
+
+	Ноб и доска РИСУЮТСЯ ЛОКАЛЬНО на клиенте (см. ClientMain) — сервер хранит
+	только данные (HasNoob, уровни, валюту).
 ]]
 
 local Players          = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage    = game:GetService("ServerStorage")
 local Workspace        = game:GetService("Workspace")
 
 local Shared    = ReplicatedStorage:WaitForChild("Shared")
@@ -44,21 +46,7 @@ local RequestData = makeRemote("RequestData") -- client -> server (дай дан
 local UpgradeNoob = makeRemote("UpgradeNoob") -- client -> server
 local BuyUpgrade  = makeRemote("BuyUpgrade")  -- client -> server (id, mode)
 
--- ── ПЛОТЫ ────────────────────────────────────────────────────────────────
-local Plots = Instance.new("Folder")
-Plots.Name = "Plots"
-Plots.Parent = Workspace
-
-local plotData = {}     -- [player] = {folder, button, pad, board, index, spawnCFrame}
-local usedIndices = {}  -- [index] = true
-
-local function allocIndex()
-	local i = 0
-	while usedIndices[i] do i += 1 end
-	usedIndices[i] = true
-	return i
-end
-
+-- ── ОБЩАЯ ЛОКАЦИЯ (строим один раз) ──────────────────────────────────────
 local function makePart(name, size, cframe, color, parent)
 	local p = Instance.new("Part")
 	p.Name = name
@@ -72,113 +60,56 @@ local function makePart(name, size, cframe, color, parent)
 	return p
 end
 
--- Строим простой рабочий плот. Геометрию потом легко заменить своими моделями
--- (главное — сохранить имена детей: "Button", "Pad", "Board" и Owner).
-local function buildPlot(player)
-	local index = allocIndex()
-	local base = Config.Plot.Origin + Vector3.new(index * Config.Plot.Spacing, 0, 0)
+local buttonPart -- площадка-кнопка (общая)
 
-	local folder = Instance.new("Folder")
-	folder.Name = "Plot_" .. player.UserId
-	folder.Parent = Plots
-
-	local owner = Instance.new("ObjectValue")
-	owner.Name = "Owner"
-	owner.Value = player
-	owner.Parent = folder
+local function buildWorld()
+	local folder = Workspace:FindFirstChild(Config.World.FolderName)
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = Config.World.FolderName
+		folder.Parent = Workspace
+	end
 
 	-- пол
-	makePart("Floor", Vector3.new(60, 1, 60), CFrame.new(base), Color3.fromRGB(120, 200, 120), folder)
-
-	-- площадка под ноба
-	local pad = makePart("Pad", Vector3.new(10, 1, 10),
-		CFrame.new(base + Vector3.new(6, 1, -4)), Color3.fromRGB(235, 220, 90), folder)
-
-	-- кнопка-пьедестал (к ней ведёт стрелка-туториал)
-	local button = makePart("Button", Vector3.new(6, 4, 6),
-		CFrame.new(base + Vector3.new(-8, 2.5, -2)), Color3.fromRGB(85, 170, 255), folder)
-	button.Material = Enum.Material.Neon
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "BuyPrompt"
-	prompt.ActionText = "Get your Noob"
-	prompt.ObjectText = "Free!"
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 12
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = button
-
-	-- доска улучшений (SurfaceGui построит клиент). Front-грань смотрит к игроку.
-	local boardPos = base + Vector3.new(-12, 8, -16)
-	local board = makePart("Board", Vector3.new(26, 14, 1),
-		CFrame.lookAt(boardPos, boardPos + Vector3.new(0, 0, 1)), Color3.fromRGB(20, 18, 40), folder)
-	board.Material = Enum.Material.SmoothPlastic
-
-	local spawnCFrame = CFrame.new(base + Vector3.new(0, 4, 14),
-		base + Vector3.new(0, 4, -10)) -- лицом к доске/нобу
-
-	plotData[player] = {
-		folder = folder, button = button, pad = pad, board = board,
-		index = index, prompt = prompt, spawnCFrame = spawnCFrame,
-	}
-	return plotData[player]
-end
-
--- ── СПАВН НОБА ───────────────────────────────────────────────────────────
-local function spawnNoob(player)
-	local pd = plotData[player]
-	if not pd or pd.folder:FindFirstChild("Noob") then return end
-
-	local rig = ServerStorage:FindFirstChild(Config.Noob.RigName)
-	if not rig then
-		warn("[GameServer] В ServerStorage нет рига '" .. Config.Noob.RigName .. "'. Ноб не появится визуально.")
-		return
+	if not folder:FindFirstChild("Floor") then
+		makePart("Floor", Vector3.new(120, 1, 120), CFrame.new(0, 0, 0),
+			Color3.fromRGB(120, 200, 120), folder)
 	end
 
-	local noob = rig:Clone()
-	noob.Name = "Noob"
-
-	-- ставим на площадку, лицом к игроку (+Z), поэтому поворот на 180°
-	local pad = pd.pad
-	local topY = pad.Position.Y + pad.Size.Y / 2
-	local standPos = Vector3.new(pad.Position.X, topY + 3, pad.Position.Z)
-	noob:PivotTo(CFrame.new(standPos) * CFrame.Angles(0, math.pi, 0))
-
-	-- фиксируем, чтобы не падал/не уходил
-	local hrp = noob:FindFirstChild("HumanoidRootPart") or noob:FindFirstChild("Torso")
-	if hrp then hrp.Anchored = true end
-
-	local ownerVal = Instance.new("ObjectValue")
-	ownerVal.Name = "Owner"
-	ownerVal.Value = player
-	ownerVal.Parent = noob
-
-	noob.Parent = pd.folder
-
-	-- анимация
-	local hum = noob:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None -- своё имя нарисуем сами
-		local animator = hum:FindFirstChildOfClass("Animator")
-		if not animator then
-			animator = Instance.new("Animator")
-			animator.Parent = hum
-		end
-		local anim = Instance.new("Animation")
-		anim.AnimationId = Config.Noob.AnimationId
-		local ok, track = pcall(function()
-			return animator:LoadAnimation(anim)
-		end)
-		if ok and track then
-			track.Looped = true
-			track:Play()
-		end
+	-- кнопка-площадка (на неё наступают; на ней стоит ноб)
+	buttonPart = folder:FindFirstChild("Button")
+	if not buttonPart then
+		buttonPart = makePart("Button", Config.World.ButtonSize,
+			CFrame.new(Config.World.ButtonPos), Color3.fromRGB(85, 170, 255), folder)
+		buttonPart.Material = Enum.Material.Neon
 	end
+
+	-- доска (SurfaceGui повесит клиент). Front-грань смотрит к игроку (+Z).
+	if not folder:FindFirstChild("Board") then
+		local board = makePart("Board", Config.World.BoardSize,
+			CFrame.lookAt(Config.World.BoardPos, Config.World.BoardPos + Vector3.new(0, 0, 1)),
+			Color3.fromRGB(20, 18, 40), folder)
+		board.Material = Enum.Material.SmoothPlastic
+	end
+
+	-- точка спавна
+	if not folder:FindFirstChild("Spawn") then
+		local spawn = Instance.new("SpawnLocation")
+		spawn.Name = "Spawn"
+		spawn.Size = Vector3.new(8, 1, 8)
+		spawn.CFrame = CFrame.new(Config.World.SpawnPos)
+		spawn.Anchored = true
+		spawn.Neutral = true
+		spawn.Duration = 0
+		spawn.Color3 = Color3.fromRGB(60, 60, 70)
+		spawn.Parent = folder
+	end
+
+	return folder
 end
 
 -- ── СИНХРОНИЗАЦИЯ КЛИЕНТУ ───────────────────────────────────────────────
 local function snapshot(profile)
-	-- чистая копия профиля без служебных полей
 	return {
 		Oof       = profile.Oof,
 		Gems      = profile.Gems,
@@ -196,42 +127,41 @@ local function sync(player)
 	end
 end
 
+-- ── ПОКУПКА НОБА ПО НАСТУПАНИЮ ───────────────────────────────────────────
+local buyDebounce = {} -- [player] = true (чтобы Touched не сработал сто раз)
+
+local function tryBuyNoob(player)
+	local p = DataManager.get(player)
+	if not p or p.HasNoob then return end
+	if p.Oof < Config.Noob.BuyCost then return end
+	p.Oof -= Config.Noob.BuyCost
+	p.HasNoob = true
+	sync(player)
+	Notify:FireClient(player, "Noob unlocked!", "oof")
+end
+
+local function onButtonTouched(hit)
+	local character = hit and hit.Parent
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	local player = Players:GetPlayerFromCharacter(character)
+	if not player then return end
+	if buyDebounce[player] then return end
+
+	local p = DataManager.get(player)
+	if not p or p.HasNoob then return end
+
+	buyDebounce[player] = true
+	tryBuyNoob(player)
+	task.delay(1, function() buyDebounce[player] = nil end)
+end
+
 -- ── ВХОД ИГРОКА ──────────────────────────────────────────────────────────
 local function onPlayerAdded(player)
-	local profile = DataManager.load(player)
-	local pd = buildPlot(player)
+	DataManager.load(player)
 
-	-- если ноб уже куплен в прошлой сессии — сразу ставим его
-	if profile.HasNoob then
-		pd.prompt.Enabled = false
-		spawnNoob(player)
-	end
-
-	-- кнопка: покупка ноба (только владелец плота)
-	pd.prompt.Triggered:Connect(function(triggerPlayer)
-		if triggerPlayer ~= player then return end
-		local p = DataManager.get(player)
-		if not p or p.HasNoob then return end
-		if p.Oof >= Config.Noob.BuyCost then
-			p.Oof -= Config.Noob.BuyCost
-			p.HasNoob = true
-			pd.prompt.Enabled = false
-			spawnNoob(player)
-			sync(player)
-		end
-	end)
-
-	-- телепорт на свой плот при каждом респавне
-	local function onCharacter(char)
-		local hrpPart = char:WaitForChild("HumanoidRootPart", 10)
-		if hrpPart and plotData[player] then
-			char:PivotTo(plotData[player].spawnCFrame)
-		end
-	end
-	player.CharacterAdded:Connect(onCharacter)
-	if player.Character then onCharacter(player.Character) end
-
-	-- ДОХОД ОТ НОБА: отдельный цикл на игрока
+	-- ДОХОД ОТ НОБА
 	task.spawn(function()
 		while DataManager.get(player) do
 			local p = DataManager.get(player)
@@ -248,7 +178,7 @@ local function onPlayerAdded(player)
 		end
 	end)
 
-	-- ГЕМЫ: пассивный доход по таймеру
+	-- ГЕМЫ
 	task.spawn(function()
 		while DataManager.get(player) do
 			task.wait(Config.Gems.Interval)
@@ -263,15 +193,9 @@ local function onPlayerAdded(player)
 	sync(player)
 end
 
--- ── ВЫХОД ИГРОКА ─────────────────────────────────────────────────────────
 local function onPlayerRemoving(player)
 	DataManager.release(player)
-	local pd = plotData[player]
-	if pd then
-		usedIndices[pd.index] = nil
-		if pd.folder then pd.folder:Destroy() end
-		plotData[player] = nil
-	end
+	buyDebounce[player] = nil
 end
 
 -- ── ОБРАБОТКА ПОКУПОК ────────────────────────────────────────────────────
@@ -323,10 +247,13 @@ RequestData.OnServerEvent:Connect(function(player)
 end)
 
 -- ── СТАРТ ────────────────────────────────────────────────────────────────
+local world = buildWorld()
+buttonPart.Touched:Connect(onButtonTouched)
+
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoving)
 for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(onPlayerAdded, player) -- на случай горячей перезагрузки скрипта
+	task.spawn(onPlayerAdded, player)
 end
 
 -- автосейв
@@ -339,7 +266,6 @@ task.spawn(function()
 	end
 end)
 
--- сохранение при закрытии сервера
 game:BindToClose(function()
 	for _, player in ipairs(Players:GetPlayers()) do
 		DataManager.save(player)
@@ -347,4 +273,4 @@ game:BindToClose(function()
 	task.wait(2)
 end)
 
-print("[GameServer] запущен ✔")
+print("[GameServer] запущен ✔ (локация: " .. world.Name .. ")")
