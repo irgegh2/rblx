@@ -54,7 +54,7 @@ local C = {
 local function corner(gui, r)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, r or 10)
-	c.Parent = root
+	c.Parent = gui
 	return c
 end
 
@@ -62,7 +62,7 @@ local function stroke(gui, color, t)
 	local s = Instance.new("UIStroke")
 	s.Color = color or Color3.new(0, 0, 0)
 	s.Thickness = t or 2
-	s.Parent = root
+	s.Parent = gui
 	return s
 end
 

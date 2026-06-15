@@ -27,12 +27,12 @@ function Formulas.moreOofMultiplier(moreOofLevel)
 	return 2 ^ math.floor((moreOofLevel or 0) / 15)
 end
 
--- Доход ноба за один тик
+-- Доход ноба за один тик (геометрия: BaseReward * RewardGrowth^(level-1) * множитель)
 function Formulas.noobReward(profile)
 	local level = profile.NoobLevel or 1
-	local base = Config.Noob.BaseReward + (level - 1) * Config.Noob.RewardPerLevel
+	local base = Config.Noob.BaseReward * (Config.Noob.RewardGrowth ^ (level - 1))
 	local mult = Formulas.moreOofMultiplier(profile.Upgrades.MoreOof)
-	return math.floor(base * mult)
+	return base * mult
 end
 
 -- Интервал между тиками (секунды), ускоряется "Faster Noobs"
@@ -43,9 +43,9 @@ function Formulas.noobInterval(profile)
 	return math.max(0.25, Config.Noob.BaseInterval - reduction)
 end
 
--- Цена прокачки ноба с текущего уровня на следующий
+-- Цена прокачки ноба с текущего уровня на следующий (геометрия)
 function Formulas.noobUpgradeCost(currentLevel)
-	return math.floor(Config.Noob.UpgradeBaseCost * Config.Noob.UpgradeCostGrowth ^ (currentLevel - 1))
+	return Config.Noob.UpgradeBaseCost * (Config.Noob.UpgradeCostGrowth ^ (currentLevel - 1))
 end
 
 -- Цена улучшения на доске на следующий уровень

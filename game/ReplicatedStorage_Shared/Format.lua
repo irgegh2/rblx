@@ -14,10 +14,14 @@ local SUFFIXES = {
 }
 
 function Format.short(n)
-	n = math.floor(tonumber(n) or 0)
+	n = tonumber(n) or 0
 	if n < 1000 then
-		return tostring(n)
+		-- мелкие числа — с дробью: 2.29, 5.25, 33.6, 144 (хвостовые нули убираем)
+		local s = string.format("%.2f", n)
+		s = s:gsub("%.?0+$", "")
+		return s
 	end
+	n = math.floor(n)
 
 	local index = math.floor(math.log(n, 1000))
 	index = math.clamp(index, 1, #SUFFIXES - 1)

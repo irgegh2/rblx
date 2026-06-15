@@ -33,12 +33,12 @@ Config.Noob = {
 	BuyCost = 0,        -- цена первого ноба (0 = бесплатно при наступании на кнопку)
 
 	BaseInterval = 3,   -- раз в сколько секунд ноб приносит Oof
-	BaseReward   = 1,   -- доход за тик на 1 уровне
+	BaseReward   = 1,   -- ДОХОД на 1 уровне (база, без множителя More Oof)
+	RewardGrowth = 1.626, -- доход растёт В РАЗ за каждый уровень (геометрия)
 
 	MaxLevel          = 1000,
-	UpgradeBaseCost   = 10,
-	UpgradeCostGrowth = 1.35,
-	RewardPerLevel    = 1,
+	UpgradeBaseCost   = 2.29, -- цена прокачки 1 -> 2
+	UpgradeCostGrowth = 2.29, -- цена растёт В РАЗ за каждый уровень
 
 	-- ВАЖНО: риг теперь лежит в ReplicatedStorage (его клонирует КЛИЕНТ локально).
 	RigName     = "NoobRig",
