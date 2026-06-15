@@ -387,7 +387,9 @@ local function decorateNoob(noob)
 	bb.StudsOffset = Vector3.new(0, 4, 0)
 	bb.AlwaysOnTop = true
 	bb.Adornee = head
-	bb.Parent = head
+	-- ВАЖНО: кнопки в BillboardGui кликаются ТОЛЬКО если он в PlayerGui (через Adornee),
+	-- а не припарентен к части в мире. Иначе "Upgrade" не нажимается.
+	bb.Parent = playerGui
 
 	newText({ Size = UDim2.new(1, 0, 0, 26), Text = Config.Noob.DisplayName, Parent = bb })
 
