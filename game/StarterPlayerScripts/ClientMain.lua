@@ -21,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
 local TweenService      = game:GetService("TweenService")
 local Workspace         = game:GetService("Workspace")
+local ContextActionService = game:GetService("ContextActionService")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -358,16 +359,42 @@ local function buildBoard(boardPart)
 	newText({ Size = UDim2.new(1, 0, 0, 70), Position = UDim2.new(0, 0, 0, 6),
 		Text = "Oof Upgrades", TextColor3 = C.oof, Parent = bg })
 
-	local holder = Instance.new("Frame")
+	-- ScrollingFrame: доску можно прокручивать колёсиком/тачпадом
+	local holder = Instance.new("ScrollingFrame")
 	holder.Size = UDim2.new(1, -40, 1, -100)
 	holder.Position = UDim2.new(0, 20, 0, 84)
 	holder.BackgroundTransparency = 1
+	holder.BorderSizePixel = 0
+	holder.Active = true
+	holder.ScrollingDirection = Enum.ScrollingDirection.X
+	holder.AutomaticCanvasSize = Enum.AutomaticSize.X
+	holder.CanvasSize = UDim2.new(0, 0, 0, 0)
+	holder.ScrollBarThickness = 8
+	holder.ScrollBarImageColor3 = C.oof
+	holder.ScrollBarImageTransparency = 0.35
 	holder.Parent = bg
+
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
 	layout.Padding = UDim.new(0, 24)
 	layout.Parent = holder
+
+	-- Пока курсор над доской — перехватываем прокрутку (иначе она крутит камеру).
+	-- Колёсико/два пальца двигают доску по горизонтали; камера не реагирует (Sink).
+	local function onWheel(_, inputState, input)
+		if inputState == Enum.UserInputState.Change then
+			holder.CanvasPosition = holder.CanvasPosition + Vector2.new(-input.Position.Z * 90, 0)
+		end
+		return Enum.ContextActionResult.Sink
+	end
+	holder.MouseEnter:Connect(function()
+		ContextActionService:BindActionAtPriority("BoardScroll", onWheel, false, 3000, Enum.UserInputType.MouseWheel)
+	end)
+	holder.MouseLeave:Connect(function()
+		ContextActionService:UnbindAction("BoardScroll")
+	end)
 
 	boardRef = {}
 
