@@ -1,0 +1,22 @@
+{
+  "name": "OofIncremental",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "game/ReplicatedStorage_Shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "$path": "game/ServerScriptService"
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "game/StarterPlayerScripts"
+      }
+    }
+  }
+}
