@@ -103,4 +103,7 @@ Config.World = {
 -- Оставь "rbxassetid://0" — будет просто белая линия без текстуры.
 Config.ArrowImageId = "rbxassetid://0"
 
+-- ПЛАШКА ВЕРСИИ (справа сверху) --------------------------------------------
+Config.VersionText = "v1"
+
 return Config

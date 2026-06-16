@@ -140,6 +140,50 @@ local function buildHUD()
 	ref.topBar.Parent = barBg
 	corner(ref.topBar, 4)
 
+	-- ПЛАШКИ СПРАВА СВЕРХУ (версия + FPS), на уровне чата/настроек.
+	-- Парентим к gui (не к root), чтобы общий UIScale их НЕ уменьшал.
+	local rightTop = Instance.new("Frame")
+	rightTop.Name = "TopRight"
+	rightTop.AnchorPoint = Vector2.new(1, 0)
+	rightTop.Position = UDim2.new(1, -16, 0, 6)
+	rightTop.Size = UDim2.new(0, 320, 0, 36)
+	rightTop.BackgroundTransparency = 1
+	rightTop.Parent = gui
+
+	local rtLayout = Instance.new("UIListLayout")
+	rtLayout.FillDirection = Enum.FillDirection.Horizontal
+	rtLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	rtLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	rtLayout.Padding = UDim.new(0, 8)
+	rtLayout.Parent = rightTop
+
+	local function makePill(order)
+		local p = Instance.new("TextLabel")
+		p.AutomaticSize = Enum.AutomaticSize.X
+		p.Size = UDim2.new(0, 0, 1, 0)
+		p.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
+		p.BackgroundTransparency = 0.05
+		p.Font = Enum.Font.GothamBold
+		p.TextSize = 18
+		p.TextColor3 = Color3.fromRGB(235, 235, 245)
+		p.Text = ""
+		p.LayoutOrder = order
+		p.Parent = rightTop
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 14)
+		pad.PaddingRight = UDim.new(0, 14)
+		pad.Parent = p
+		corner(p, 999) -- капсула (полное скругление)
+		stroke(p, Color3.fromRGB(0, 0, 0), 2)
+		return p
+	end
+
+	local versionPill = makePill(1)
+	versionPill.Text = Config.VersionText or "v1"
+
+	ref.fps = makePill(2)
+	ref.fps.Text = "-- FPS"
+
 	-- OOF (справа)
 	local oof = Instance.new("Frame")
 	oof.Size = UDim2.new(0, 230, 0, 60)
@@ -655,6 +699,19 @@ RunService.Heartbeat:Connect(function(dt)
 	if gemTimer <= 0 then gemTimer = Config.Gems.Interval end
 	if ref.gemRate then
 		ref.gemRate.Text = "+" .. Format.short(Config.Gems.Amount) .. " [" .. math.ceil(gemTimer) .. "s]"
+	end
+end)
+
+-- счётчик FPS (усреднение раз в 0.5с)
+local fpsFrames, fpsElapsed = 0, 0
+RunService.RenderStepped:Connect(function(dt)
+	fpsFrames += 1
+	fpsElapsed += dt
+	if fpsElapsed >= 0.5 then
+		if ref.fps then
+			ref.fps.Text = math.floor(fpsFrames / fpsElapsed + 0.5) .. " FPS"
+		end
+		fpsFrames, fpsElapsed = 0, 0
 	end
 end)
 
