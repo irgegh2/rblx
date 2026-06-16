@@ -37,8 +37,8 @@ Config.Noob = {
 	RewardGrowth = 1.626, -- доход растёт В РАЗ за каждый уровень (геометрия)
 
 	MaxLevel          = 1000,
-	UpgradeBaseCost   = 2.29, -- цена прокачки 1 -> 2
-	UpgradeCostGrowth = 2.29, -- цена растёт В РАЗ за каждый уровень
+	UpgradeBaseCost   = 2.29,  -- цена прокачки 1 -> 2
+	UpgradeCostGrowth = 2.292, -- цена растёт В РАЗ за каждый уровень (подогнано под оригинал)
 
 	-- ВАЖНО: риг теперь лежит в ReplicatedStorage (его клонирует КЛИЕНТ локально).
 	RigName     = "NoobRig",
